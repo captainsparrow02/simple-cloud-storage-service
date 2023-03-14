@@ -15,7 +15,7 @@ A simple and easy to use cloud storage which automatically pushes files from loc
 pip install -r rquirements
 ```
 
-### Setting up AWS IoT Core
+## Setting up AWS IoT Core
 
 Create an AWS IoT Thing.
 
@@ -81,7 +81,7 @@ aws iot attach-policy \
     --target your-certificateArn
 ```
 
-## Setting AWS S3
+## Setting up AWS S3
 
 Run the following code in your terminal to create a S3 bucket called `cloud-storage-bucket`
 

@@ -280,7 +280,7 @@ Create a `notification.json` in the current location and paste the bewlo content
 {
     "LambdaFunctionConfigurations": [
         {
-            "LambdaFunctionArn": cs_s3_upload_success_arn,
+            "LambdaFunctionArn": "cs_s3_upload_success_arn",
             "Events": [
                 "s3:ObjectCreated:*"
             ]

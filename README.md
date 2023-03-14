@@ -80,3 +80,119 @@ aws iot attach-policy \
     --policy-name cloud_project_policy \
     --target your-certificateArn
 ```
+
+## Setting AWS S3
+
+Run the following code in your terminal to create a S3 bucket called `cloud-storage-bucket`
+
+```sh
+aws s3api create-bucket \
+    --bucket cloud-storage-bucket \
+    --region us-west-2 \
+    --create-bucket-configuration LocationConstraint=us-west-2
+```
+
+*Note: Ensure that the region of your AWS IoT Thing and your bucket is the same.*
+
+## Setting up AWS Lambda to get pre-signed URLs for S3
+
+Create a file called `lambda.py` and paste the following code inside it.
+
+```py
+import json
+import boto3
+from botocore.client import Config
+
+s3Client = boto3.client('s3', config = Config(signature_version = 's3v4'))
+iotClient = boto3.client('iot-data', region_name = 'us-west-2')
+
+def lambda_handler(event, context):
+    
+    bucket_name = event['bucket_name']
+    files = event['files']
+    expire = 1800
+    
+    payload = []
+    for file in files:
+        try:
+            signed_url = s3Client.generate_presigned_post(
+                Bucket = bucket_name,
+                Key = file,
+                Fields = None,
+                Conditions = None,
+                ExpiresIn = expire
+                )
+        except Exception as e:
+            print(e)
+            signed_url = []
+        
+        payload.append({
+            'data': signed_url
+        })
+    
+    response = iotClient.publish(
+        topic = 'cloudstorage/post/signedurl/data',
+        qos = 1,
+        payload = json.dumps({
+            'payload' : payload
+        })
+        )
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps(response)
+    }
+```
+
+Before uploading we need to zip the lambda file.
+
+```sh
+zip my_function.zip lambda.py
+```
+
+Now we will create a `role.json` file and configure it for our lambda.
+
+```json
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Effect": "Allow",
+      "Principal": {
+        "Service": "lambda.amazonaws.com"
+      },
+      "Action": "sts:AssumeRole"
+    }
+  ]
+}
+```
+
+Now run the following command to create a role for our lambda function.
+
+```sh
+aws iam create-role --role-name cs-presigned-url-role --assume-role-policy-document file://role.json
+```
+
+Note down the ARN recieved after executing the code as we will be using to create our lambda function.
+
+Additionally, attach policies to gives acccess to our lambda for using S3 and IoT resources.
+
+```sh
+aws iam attach-role-policy --role-name cs-presigned-url-role \
+    --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+aws iam attach-role-policy --role-name cs-presigned-url-role \
+    --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
+aws iam attach-role-policy --role-name cs-presigned-url-role \
+    --policy-arn arn:aws:iam::aws:policy/AWSIoTWirelessFullPublishAccess
+```
+
+Finally we will create our lambda function by uploading it to AWS. Replace `your-lambda-execution-role-arn` with the ARN recieved after creating the role.
+
+```sh
+aws lambda create-function --function-name cs_presigned_url_function \
+    --zip-file fileb://my_function.zip \
+    --handler lambda.handler \
+    --region us-west-2 \
+    --runtime python3.9 \
+    --role your-lambda-execution-role-arn
+```

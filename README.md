@@ -2,6 +2,8 @@
 
 A simple and easy to use cloud storage which automatically pushes files from local storage to cloud for easy access.
 
+![Cloud Architecture](../assets/cloud-storage.png?raw=true)
+
 ### Pre-requisites to run this application.
 
 * A working AWS account since this project uses Amazon Simple Storage Service (S3) for cloud storage. Keep in mind that using AWS S3 incurr charges.

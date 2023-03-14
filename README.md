@@ -344,7 +344,7 @@ pip install -r rquirements
 Inside the current location run the following command.
 
 ```sh
-python3 run.py
+python3 app.py
 ```
 
 Place the file(s) you want to upload inside the `cloud_storage` repository. Wait for a few seconds and you will find the files getting removed on its own. The files get removed only after getting successfully uploaded to our S3 bucket.

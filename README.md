@@ -9,12 +9,6 @@ A simple and easy to use cloud storage which automatically pushes files from loc
 * Python version 3
 * Linux based operating system for implementing auto-running using systemd. (*Optional*)
 
-### Install the required libraries
-
-```sh
-pip install -r rquirements
-```
-
 ## Setting up AWS IoT Core
 
 Create an AWS IoT Thing.
@@ -196,3 +190,163 @@ aws lambda create-function --function-name cs_presigned_url_function \
     --runtime python3.9 \
     --role your-lambda-execution-role-arn
 ```
+
+## Create IoT Rule to trigger Lambda function
+
+To trigger our `cs_presigned_url_function` lambda function we will create an IoT rule.
+
+Create a rule payload document `myrule.json` and paste the json content inside.
+```json
+{
+  "sql": "SELECT * FROM 'cloudstorage/get/signedurl/data'",
+  "ruleDisabled": false,
+  "awsIotSqlVersion": "2016-03-23",
+  "actions": [{
+      "lambda": {
+          "functionArn": "arn:aws:lambda:us-west-2:123456789012:function:cs_presigned_url_function"
+      }
+  }]
+}
+```
+Replace the `functionArn` with your own lambda function's ARN.
+
+In case you did not save the lambda function ARN during its creation, you can use the below command to fetch the details of your lambda function.
+
+```sh
+aws lambda get-function \
+    --function-name  cs_presigned_url_function
+```
+
+Once you replace the `functionArn` with your own, upload the rule payload.
+
+```sh
+aws iot create-topic-rule \
+    --rule-name signed_url_cloud_storage_rule \
+    --topic-rule-payload file://myrule.json
+```
+
+## Setting up Lambda to authenticate successful upload to S3.
+
+Create a file called `lambda.py` and paste the following code inside it.
+
+```py
+import json
+import boto3
+from botocore.client import Config
+
+iotClient = boto3.client('iot-data', region_name = 'us-west-2')
+
+def lambda_handler(event, context):
+    file = event['Records'][0]['s3']['object']['key']
+    response = iotClient.publish(
+        topic = 'cloudstorage/post/authenticate/data',
+        qos = 1,
+        payload = json.dumps({
+            'file' : file.replace('+',' ')
+            
+        })
+        )
+    
+    return {
+        'statusCode': 200,
+        'body': json.dumps({ 'file' : file })
+    }
+```
+
+Before uploading we need to zip the lambda file.
+
+```sh
+zip my_function.zip lambda.py
+```
+
+For this lambda function we will use the existing `cs-presigned-url-role` since it contains the required permissions.
+
+Run the following code to create the function and replace the `cs-presigned-url-role-arn` with the actual role ARN.
+
+```sh
+aws lambda create-function --function-name cs_s3_upload_success \
+    --zip-file fileb://my_function.zip \
+    --handler lambda.handler \
+    --region us-west-2 \
+    --runtime python3.9 \
+    --role cs-presigned-url-role-arn
+```
+
+## Setting up S3 put trigger for Lambda
+
+Create a `notification.json` in the current location and paste the bewlo content inside it. Replace the `cs_s3_upload_success_arn` with the actual lambda fucntion's ARN.
+
+```json
+{
+    "LambdaFunctionConfigurations": [
+        {
+            "LambdaFunctionArn": cs_s3_upload_success_arn,
+            "Events": [
+                "s3:ObjectCreated:*"
+            ]
+        }
+    ]
+}
+```
+
+Now upload the notification configuration to create the put trigger.
+
+```sh
+aws s3api put-bucket-notification-configuration \
+    --bucket cloud-storage-bucket \
+    --notification-configuration file://notification.json
+```
+## Setting the local storage confuguration file.
+
+Local storage configuration is stored inside the `cloud.conf` file. Edit and place the AWS Iot (ARN) endpoint.
+
+```conf
+	"CLOUD": {
+    	"ARN" : "a2d3jxxxxxxxxx-ats.iot.us-west-2.amazonaws.com",
+    	"PORT" : "8883",
+    	"MQTT_INTERVAL" : "44",
+    	"BUCKET_NAME" : "cloud-storage-bucket",
+    	"PUBLISH" : {
+    	"CLIENT_NAME" : "Cloud-Storage-Publish-Client",
+    	"TOPIC" : "cloudstorage/get/signedurl/data",
+    	"QoS" : "1"
+    	},
+    	"SUBSCRIBE" : {
+        	"CLIENT_NAME" : "Cloud-Storage-Subscribe-Client",
+        	"TOPIC" : "cloudstorage/post/signedurl/data",
+        	"QoS" : "0"
+        	},
+    	"AUTHENTICATE" : {
+        	"CLIENT_NAME" : "Cloud-Storage-Autheticate-Client",
+        	"TOPIC" : "cloudstorage/post/authenticate/data",
+        	"QoS" : "0"
+        	},
+    	"ROOT_CA_PATH" : "certificates/AmazonRootCA1.pem",
+    	"DEVICE_CERT_PATH" : "certificates/certificate.pem.crt",
+    	"PRIVATE_KEY_PATH" : "certificates/private.pem.key"
+    	},
+	"LOCAL" : {
+	    "STORAGE_PATH" : "cloud_storage/"
+	}
+}
+```
+
+You can use `aws iot describe-endpoint` to know your IoT Endpoint (ARN).
+
+### Install the required libraries
+
+```sh
+pip install -r rquirements
+```
+
+## Running the scripts.
+
+Inside the current location run the following command.
+
+```sh
+python3 run.py
+```
+
+Place the file(s) you want to upload inside the `cloud_storage` repository. Wait for a few seconds and you will find the files getting removed on its own. The files get removed only after getting successfully uploaded to our S3 bucket.
+
+You can check the logs by doing `cat cloud.log`.

@@ -333,7 +333,7 @@ Local storage configuration is stored inside the `cloud.conf` file. Edit and pla
 
 You can use `aws iot describe-endpoint` to know your IoT Endpoint (ARN).
 
-### Install the required libraries
+## Install the required libraries
 
 ```sh
 pip install -r rquirements
